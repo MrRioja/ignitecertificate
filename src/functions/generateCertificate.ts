@@ -1,3 +1,4 @@
+import chromium from "chrome-aws-lambda";
 import { document } from "../utils/dynamodbClient";
 
 interface ICreateCertificate {
