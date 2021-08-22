@@ -1,6 +1,7 @@
 import chromium from "chrome-aws-lambda";
 import path from "path";
 import fs from "fs";
+import { S3 } from "aws-sdk";
 import handlebars from "handlebars";
 
 import { document } from "../utils/dynamodbClient";
@@ -36,16 +37,30 @@ const compile = async function (data: ITemplate) {
 export const handle = async (event) => {
   const { id, name, grade } = JSON.parse(event.body) as ICreateCertificate;
 
-  await document
-    .put({
+  const response = await document
+    .query({
       TableName: "users_certificates",
-      Item: {
-        id,
-        name,
-        grade,
+      KeyConditionExpression: "id = :id",
+      ExpressionAttributeValues: {
+        ":id": id,
       },
     })
     .promise();
+
+  const userAlreadyExists = response.Items[0];
+
+  if (!userAlreadyExists) {
+    await document
+      .put({
+        TableName: "users_certificates",
+        Item: {
+          id,
+          name,
+          grade,
+        },
+      })
+      .promise();
+  }
 
   const medalPath = path.join(process.cwd(), "src", "templates", "selo.png");
   const medal = fs.readFileSync(medalPath, "base64");
@@ -81,10 +96,23 @@ export const handle = async (event) => {
 
   await browser.close();
 
+  const s3 = new S3();
+
+  await s3
+    .putObject({
+      Bucket: "certificatesignite",
+      Key: `${id}.pdf`,
+      ACL: "public-read",
+      Body: pdf,
+      ContentType: "application/pdf",
+    })
+    .promise();
+
   return {
     statusCode: 201,
     body: JSON.stringify({
       message: "Certificate created!",
+      url: `https://certificatesignite.s3.sa-east-1.amazonaws.com/${id}.pdf`,
     }),
     headers: {
       "Content-type": "application/json",
